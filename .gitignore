@@ -4,6 +4,7 @@
 *.pyc
 *.pyo
 *~
+bin/*
 \#*
 src/zmap
 src/zopt.h
