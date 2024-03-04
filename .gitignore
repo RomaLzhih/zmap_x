@@ -5,6 +5,8 @@
 *.pyo
 *~
 bin/*
+.venv/*
+build/*
 \#*
 src/zmap
 src/zopt.h
