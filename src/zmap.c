@@ -46,7 +46,7 @@
 
 #include "output_modules/output_modules.h"
 #include "probe_modules/probe_modules.h"
-
+#include <cilk/cilk.h>
 #ifdef PFRING
 #include <pfring_zc.h>
 static int32_t distrib_func(pfring_zc_pkt_buff *pkt, pfring_zc_queue *in_queue,
@@ -71,9 +71,7 @@ static int32_t distrib_func(pfring_zc_pkt_buff *pkt, pfring_zc_queue *in_queue,
 
 pthread_mutex_t recv_ready_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-int get_num_cores(void) {
-	return sysconf(_SC_NPROCESSORS_ONLN);
-}
+int get_num_cores(void) { return sysconf(_SC_NPROCESSORS_ONLN); }
 
 typedef struct send_arg {
 	uint32_t cpu;
@@ -336,8 +334,13 @@ static void start_zmap(void)
 		};                                                             \
 	}
 
+void test() { printf("Hello, world!\n"); }
+
 int main(int argc, char *argv[])
 {
+	cilk_for(int i = 0; i < 1000; i++) { printf("Hello, world!\n"); }
+	// cilk_scope { cilk_spawn test(); }
+
 	struct gengetopt_args_info args;
 	struct cmdline_parser_params *params;
 	params = cmdline_parser_params_create();
@@ -571,7 +574,6 @@ int main(int argc, char *argv[])
 	SET_IF_GIVEN(zconf.max_sendto_failures, max_sendto_failures);
 	SET_IF_GIVEN(zconf.min_hitrate, min_hitrate);
 
-
 	if (zconf.retries < 0) {
 		log_fatal("zmap", "Invalid retry count");
 	}
@@ -665,18 +667,29 @@ int main(int argc, char *argv[])
 				zconf.source_port_first = port;
 				zconf.source_port_last = port;
 			}
-			int num_source_ports = (zconf.source_port_last - zconf.source_port_first) + 1;
+			int num_source_ports =
+			    (zconf.source_port_last - zconf.source_port_first) +
+			    1;
 			if (zconf.packet_streams > num_source_ports) {
-				log_fatal("zmap", "The number of probes sent to each target ip/port (%i) "
-						"must be smaller than the size of the source port range (%u-%u, size: %i). "
-						"Otherwise, some generated probe packets will be identical.", zconf.packet_streams,
-						zconf.source_port_first, zconf.source_port_last,
-						(zconf.source_port_last - zconf.source_port_first) + 1);
-			} else if (((float)zconf.packet_streams / (float)num_source_ports) < 0.1) {
-				log_warn("zmap", "ZMap is configured to use a relatively small number"
-						" of source ports (fewer than 10x the number of probe packets per target ip/port),"
-						" which limits the entropy that ZMap has available for "
-						" validating responses. We recommend that you use a larger port range.");
+				log_fatal(
+				    "zmap",
+				    "The number of probes sent to each target ip/port (%i) "
+				    "must be smaller than the size of the source port range (%u-%u, size: %i). "
+				    "Otherwise, some generated probe packets will be identical.",
+				    zconf.packet_streams,
+				    zconf.source_port_first,
+				    zconf.source_port_last,
+				    (zconf.source_port_last -
+				     zconf.source_port_first) +
+					1);
+			} else if (((float)zconf.packet_streams /
+				    (float)num_source_ports) < 0.1) {
+				log_warn(
+				    "zmap",
+				    "ZMap is configured to use a relatively small number"
+				    " of source ports (fewer than 10x the number of probe packets per target ip/port),"
+				    " which limits the entropy that ZMap has available for "
+				    " validating responses. We recommend that you use a larger port range.");
 			}
 		}
 		if (!args.target_ports_given) {
@@ -915,7 +928,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (args.batch_given && args.batch_arg >= 1 && args.batch_arg <= UINT8_MAX) {
+	if (args.batch_given && args.batch_arg >= 1 &&
+	    args.batch_arg <= UINT8_MAX) {
 		zconf.batch = args.batch_arg;
 	} else if (args.batch_given) {
 		log_fatal("zmap", "batch size must be > 0 and <= 255");
@@ -971,16 +985,23 @@ int main(int argc, char *argv[])
 	// Initialize netmap(4) before computing number of threads,
 	// because we want to know the number of tx queues for that.
 	if (zconf.send_ip_pkts) {
-		log_fatal("zmap", "netmap does not support IP layer mode (--iplayer/-X)");
+		log_fatal(
+		    "zmap",
+		    "netmap does not support IP layer mode (--iplayer/-X)");
 	}
 	assert(zconf.iface);
 
-	log_warn("zmap", "netmap will disconnect the NIC from the host while zmap is executing");
+	log_warn(
+	    "zmap",
+	    "netmap will disconnect the NIC from the host while zmap is executing");
 	usleep(100000);
 
 	zconf.nm.nm_fd = open(NETMAP_DEVICE_NAME, O_RDWR);
 	if (zconf.nm.nm_fd == -1) {
-		log_fatal("zmap", "netmap open(\"" NETMAP_DEVICE_NAME "\") failed: %d: %s", errno, strerror(errno));
+		log_fatal("zmap",
+			  "netmap open(\"" NETMAP_DEVICE_NAME
+			  "\") failed: %d: %s",
+			  errno, strerror(errno));
 	}
 
 	struct nmreq_register nmrreg;
@@ -994,7 +1015,8 @@ int main(int argc, char *argv[])
 	strlcpy(nmrhdr.nr_name, zconf.iface, sizeof(nmrhdr.nr_name));
 	nmrhdr.nr_body = (uint64_t)&nmrreg;
 	if (ioctl(zconf.nm.nm_fd, NIOCCTRL, &nmrhdr) == -1) {
-		log_fatal("zmap", "netmap ioctl(NIOCCTRL) failed: %d: %s", errno, strerror(errno));
+		log_fatal("zmap", "netmap ioctl(NIOCCTRL) failed: %d: %s",
+			  errno, strerror(errno));
 	}
 	// From this point on, the host and NIC are separated until
 	// we close the file descriptor or exit.  We _could_ pass
@@ -1002,23 +1024,32 @@ int main(int argc, char *argv[])
 	// the host rings, but that is not currently done in order
 	// to avoid adding complexity to perf-sensitive code paths.
 
-	zconf.nm.nm_mem = mmap(NULL, nmrreg.nr_memsize, PROT_WRITE|PROT_READ, MAP_SHARED, zconf.nm.nm_fd, 0);
+	zconf.nm.nm_mem = mmap(NULL, nmrreg.nr_memsize, PROT_WRITE | PROT_READ,
+			       MAP_SHARED, zconf.nm.nm_fd, 0);
 	if (zconf.nm.nm_mem == MAP_FAILED) {
-		log_fatal("zmap", "netmap mmap() failed: %d: %s", errno, strerror(errno));
+		log_fatal("zmap", "netmap mmap() failed: %d: %s", errno,
+			  strerror(errno));
 	}
 	zconf.nm.nm_if = NETMAP_IF(zconf.nm.nm_mem, nmrreg.nr_offset);
 
-	log_info("zmap", "netmap bound to %s with %"PRIu32" tx rings, %"PRIu32" rx rings",
-	                 zconf.nm.nm_if->ni_name, zconf.nm.nm_if->ni_tx_rings, zconf.nm.nm_if->ni_rx_rings);
+	log_info("zmap",
+		 "netmap bound to %s with %" PRIu32 " tx rings, %" PRIu32
+		 " rx rings",
+		 zconf.nm.nm_if->ni_name, zconf.nm.nm_if->ni_tx_rings,
+		 zconf.nm.nm_if->ni_rx_rings);
 	for (uint32_t i = 0; i < zconf.nm.nm_if->ni_tx_rings; i++) {
 		struct netmap_ring *ring = NETMAP_TXRING(zconf.nm.nm_if, i);
-		log_debug("zmap", "tx ring %d has %"PRIu32" slots of %"PRIu32" bytes each",
-		                  i, ring->num_slots, ring->nr_buf_size);
+		log_debug("zmap",
+			  "tx ring %d has %" PRIu32 " slots of %" PRIu32
+			  " bytes each",
+			  i, ring->num_slots, ring->nr_buf_size);
 	}
 	for (uint32_t i = 0; i < zconf.nm.nm_if->ni_rx_rings; i++) {
 		struct netmap_ring *ring = NETMAP_RXRING(zconf.nm.nm_if, i);
-		log_debug("zmap", "rx ring %d has %"PRIu32" slots of %"PRIu32" bytes each",
-		                  i, ring->num_slots, ring->nr_buf_size);
+		log_debug("zmap",
+			  "rx ring %d has %" PRIu32 " slots of %" PRIu32
+			  " bytes each",
+			  i, ring->num_slots, ring->nr_buf_size);
 	}
 
 	// Enabling netmap mode on an interface resets PHY, which
@@ -1061,12 +1092,18 @@ int main(int argc, char *argv[])
 		}
 		int senders = min_int(available_cores, 4);
 		zconf.senders = senders;
-		log_debug("zmap", "will use %i sender threads based on core availability", senders);
+		log_debug(
+		    "zmap",
+		    "will use %i sender threads based on core availability",
+		    senders);
 	}
 #ifdef NETMAP
 	if (zconf.senders > (int)zconf.nm.nm_if->ni_tx_rings) {
 		zconf.senders = (int)zconf.nm.nm_if->ni_tx_rings;
-		log_debug("zmap", "capping to %i sender threads based on number of TX rings", zconf.senders);
+		log_debug(
+		    "zmap",
+		    "capping to %i sender threads based on number of TX rings",
+		    zconf.senders);
 	}
 #endif
 	if (2 * zconf.senders >= zsend.max_targets) {

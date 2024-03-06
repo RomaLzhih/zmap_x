@@ -89,7 +89,15 @@ endif()
 set(JUDY_LIBRARIES "Judy")
 
 # Standard FLAGS
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11")
+
+# OPENCILK FLAGS
+set(CMAKE_C_COMPILER "/opt/opencilk/bin/clang")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # works
+SET(GCC_COVERAGE_LINK_FLAGS    "-fopencilk")
+SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} ${GCC_COVERAGE_LINK_FLAGS}")
+add_compile_options(-fopencilk)
+
 if(NOT APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
 endif()

@@ -4,6 +4,9 @@
 *.pyc
 *.pyo
 *~
+.cache/
+WezTerm
+compile_commands.json
 bin/*
 .venv/*
 build/*
