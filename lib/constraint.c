@@ -361,7 +361,9 @@ void constraint_paint_value(constraint_t *con, value_t value)
 
 	ctimer_stop(&t);
 	ctimer_measure(&t);
-	ctimer_print(t, "PARALLEL: parallel count ips");
+	ctimer_print(
+	    t,
+	    "PARALLEL: precompute the count of leaves beneath it set to value for each node");
 	// Fill in the radix array with a list of addresses
 	uint32_t i;
 	con->radix_len = 0;
@@ -395,7 +397,9 @@ uint64_t constraint_count_ips(constraint_t *con, value_t value)
 						(uint64_t)1 << 32, 0, 0);
 		ctimer_stop(&t);
 		ctimer_measure(&t);
-		ctimer_print(t, "PARALLEL: parallel init from array\n");
+		ctimer_print(
+		    t,
+		    "PARALLEL: return the number of addresses that have a given value");
 		return n;
 	}
 }

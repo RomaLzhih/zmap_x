@@ -36,7 +36,8 @@
 // --output-filter="" or --output-module=csv to remove the implicit
 // "filter_duplicates" configuration flag.
 //
-
+#include <cilk/cilk.h>
+#include <../lib/ctimer.h>
 #include "module_dns.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -55,7 +56,7 @@
 #include "../fieldset.h"
 
 #define DNS_PAYLOAD_LEN_LIMIT 512 // This is arbitrary
-#define PCAP_SNAPLEN 1500 // This is even more arbitrary
+#define PCAP_SNAPLEN 1500	  // This is even more arbitrary
 #define MAX_QTYPE 255
 #define ICMP_UNREACH_HEADER_SIZE 8
 #define BAD_QTYPE_STR "BAD QTYPE"
@@ -81,15 +82,17 @@ static uint16_t *dns_packet_lens; // Not including udp header
 static uint16_t *qname_lens;
 static char **qnames;
 static uint16_t *qtypes;
-static int num_questions = 0; // How many DNS questions to query. Note: There's a requirement that probes is a multiple of DNS questions
+static int num_questions =
+    0; // How many DNS questions to query. Note: There's a requirement that probes is a multiple of DNS questions
 // necessary to null-terminate these since strtrk_r can take multiple delimitors as a char*, and since these are contiguous in memory,
 // they were being used jointly when the intention is to use only one at a time.
-static const char* probe_arg_delimitor = ";\0";
-static const char* domain_qtype_delimitor = ",\0";
-static const char* rn_delimitor = ":\0";
+static const char *probe_arg_delimitor = ";\0";
+static const char *domain_qtype_delimitor = ",\0";
+static const char *rn_delimitor = ":\0";
 
 static uint8_t *rdbits;
-const char *qopts_rn = "nr"; // used in query to disable recursion bit in DNS header
+const char *qopts_rn =
+    "nr"; // used in query to disable recursion bit in DNS header
 
 /* Array of qtypes we support. Jumping through some hoops (1 level of
  * indirection) so the per-packet processing time is fast. Keep this in sync
@@ -139,7 +142,10 @@ static uint16_t domain_to_qname(char **qname_handle, const char *domain)
 	qname[0] = '.';
 	// Move the domain into the qname buffer.
 	strcpy(qname + 1, domain);
-	for (int i = 0; i < len; i++) {
+	ctimer_t t;
+	ctimer_start(&t);
+	cilk_for(int i = 0; i < len; i++)
+	{
 		if (qname[i] == '.') {
 			int j;
 			for (j = i + 1; j < (len - 1); j++) {
@@ -150,12 +156,16 @@ static uint16_t domain_to_qname(char **qname_handle, const char *domain)
 			qname[i] = j - i - 1;
 		}
 	}
+	ctimer_stop(&t);
+	ctimer_measure(&t);
+	ctimer_print(t, "PARALLEL: change domain to qname");
 	*qname_handle = qname;
 	assert((*qname_handle)[len - 1] == '\0');
 	return len;
 }
 
-static int build_global_dns_packets(char *domains[], int num_domains, size_t *max_len)
+static int build_global_dns_packets(char *domains[], int num_domains,
+				    size_t *max_len)
 {
 	size_t _max_len = 0;
 	for (int i = 0; i < num_domains; i++) {
@@ -576,21 +586,28 @@ static bool process_response_answer(char **data, uint16_t *data_len,
  * Start of required zmap exports.
  */
 
-
-
 static int dns_global_initialize(struct state_conf *conf)
 {
 	setup_qtype_str_map();
 	if (!conf->probe_args) {
-		log_fatal("dns", "Need probe args, e.g. --probe-args=\"A,example.com\"");
+		log_fatal(
+		    "dns",
+		    "Need probe args, e.g. --probe-args=\"A,example.com\"");
 	}
 	// strip off any leading or trailing semicolons
 	if (*conf->probe_args == probe_arg_delimitor[0]) {
-		log_debug("dns", "Probe args (%s) contains leading semicolon. Stripping.", conf->probe_args);
+		log_debug(
+		    "dns",
+		    "Probe args (%s) contains leading semicolon. Stripping.",
+		    conf->probe_args);
 		conf->probe_args++;
 	}
-	if (conf->probe_args[strlen(conf->probe_args) - 1] == probe_arg_delimitor[0]) {
-		log_debug("dns", "Probe args (%s) contains trailing semicolon. Stripping.", conf->probe_args);
+	if (conf->probe_args[strlen(conf->probe_args) - 1] ==
+	    probe_arg_delimitor[0]) {
+		log_debug(
+		    "dns",
+		    "Probe args (%s) contains trailing semicolon. Stripping.",
+		    conf->probe_args);
 		conf->probe_args[strlen(conf->probe_args) - 1] = '\0';
 	}
 
@@ -598,75 +615,107 @@ static int dns_global_initialize(struct state_conf *conf)
 	num_questions = 0;
 
 	if (conf->probe_args) {
-		char* questions_ctx;
-		char* domain_ctx;
-		char* domain_and_qtype = strtok_r(conf->probe_args, probe_arg_delimitor, &questions_ctx);
+		char *questions_ctx;
+		char *domain_ctx;
+		char *domain_and_qtype = strtok_r(
+		    conf->probe_args, probe_arg_delimitor, &questions_ctx);
 
 		// Process each pair
 		while (domain_and_qtype != NULL) {
 			// resize the array to accommodate the new pair
-			domains = xrealloc(domains, (num_questions + 1) * sizeof(char *));
-			qtypes = xrealloc(qtypes, (num_questions + 1) * sizeof(uint16_t));
-			rdbits = xrealloc(rdbits, (num_questions + 1) * sizeof(uint8_t));
+			domains = xrealloc(domains, (num_questions + 1) *
+							sizeof(char *));
+			qtypes = xrealloc(qtypes, (num_questions + 1) *
+						      sizeof(uint16_t));
+			rdbits = xrealloc(rdbits, (num_questions + 1) *
+						      sizeof(uint8_t));
 			rdbits[num_questions] = default_rdbit;
 
 			// Tokenize pair based on comma
-			char *qtype_token = strtok_r(domain_and_qtype, domain_qtype_delimitor, &domain_ctx);
-			char *domain_token = strtok_r(NULL, domain_qtype_delimitor, &domain_ctx);
- 			if (strchr(qtype_token, rn_delimitor[0]) != NULL) {
+			char *qtype_token =
+			    strtok_r(domain_and_qtype, domain_qtype_delimitor,
+				     &domain_ctx);
+			char *domain_token =
+			    strtok_r(NULL, domain_qtype_delimitor, &domain_ctx);
+			if (strchr(qtype_token, rn_delimitor[0]) != NULL) {
 				// need to check if user supplied the no-recursion bit
-				char* rbit_ctx;
-				char *recurse_token = strtok_r(qtype_token, rn_delimitor, &rbit_ctx);
-				recurse_token = strtok_r(NULL, rn_delimitor, &rbit_ctx);
+				char *rbit_ctx;
+				char *recurse_token = strtok_r(
+				    qtype_token, rn_delimitor, &rbit_ctx);
+				recurse_token =
+				    strtok_r(NULL, rn_delimitor, &rbit_ctx);
 				// check if the no-recursion field matches the expected value ("nr")
 				if (strcmp(recurse_token, qopts_rn) == 0) {
 					rdbits[num_questions] = 0;
 				} else {
-					log_warn("dns", "invalid text after DNS query type (%s). no recursion set with \"nr\"", recurse_token);
+					log_warn(
+					    "dns",
+					    "invalid text after DNS query type (%s). no recursion set with \"nr\"",
+					    recurse_token);
 				}
 			}
 			if (domain_token == NULL || qtype_token == NULL) {
-				log_fatal( "dns", "Invalid probe args (%s). Format: \"A,google.com\" " "or \"A,google.com;A,example.com\"", conf->probe_args);
+				log_fatal(
+				    "dns",
+				    "Invalid probe args (%s). Format: \"A,google.com\" "
+				    "or \"A,google.com;A,example.com\"",
+				    conf->probe_args);
 			}
 			if (strlen(domain_token) == 0) {
-				log_fatal( "dns", "Invalid domain, domain cannot be empty.");
+				log_fatal(
+				    "dns",
+				    "Invalid domain, domain cannot be empty.");
 			}
 			uint domain_len = strlen(domain_token);
 			// add space for the null terminator
-			char* domain_ptr = xmalloc(domain_len + 1);
+			char *domain_ptr = xmalloc(domain_len + 1);
 			strncpy(domain_ptr, domain_token, domain_len);
 			// add null terminator
 			domain_ptr[domain_len] = '\0';
 
-
 			// print debug info
 			if (rdbits[num_questions] == 0) {
 				// recursion disabled
-				log_debug("dns", "parsed user input to scan domain (%s), for qtype (%s) w/o recursion", domain_ptr, qtype_token);
+				log_debug(
+				    "dns",
+				    "parsed user input to scan domain (%s), for qtype (%s) w/o recursion",
+				    domain_ptr, qtype_token);
 			} else {
-				log_debug("dns", "parsed user input to scan domain (%s), for qtype (%s) with recursion", domain_ptr, qtype_token);
+				log_debug(
+				    "dns",
+				    "parsed user input to scan domain (%s), for qtype (%s) with recursion",
+				    domain_ptr, qtype_token);
 			}
 			// add the new pair to the array
 			domains[num_questions] = domain_ptr;
 			qtypes[num_questions] = qtype_str_to_code(qtype_token);
 
 			if (!qtypes[num_questions]) {
-				log_fatal("dns", "Incorrect qtype supplied. %s", qtype_token);
+				log_fatal("dns", "Incorrect qtype supplied. %s",
+					  qtype_token);
 			}
 
 			// move to the next pair of domain/qtype
-			domain_and_qtype = strtok_r(NULL, probe_arg_delimitor, &questions_ctx);
+			domain_and_qtype =
+			    strtok_r(NULL, probe_arg_delimitor, &questions_ctx);
 			num_questions++;
 		}
 	}
 
 	if (num_questions == 0) {
 		// user didn't provide any questions, setting up a default
-		log_warn("dns", "no dns questions provided, using default domain (%s) and qtype (%s)", default_domain, qtype_strs[qtype_qtype_to_strid[default_qtype]]);
+		log_warn(
+		    "dns",
+		    "no dns questions provided, using default domain (%s) and qtype (%s)",
+		    default_domain,
+		    qtype_strs[qtype_qtype_to_strid[default_qtype]]);
 		// Resize the array to accommodate the new pair
-		domains = xrealloc(domains, (num_questions + 1) * sizeof(char *));
-		qtypes = xrealloc(qtypes, (num_questions + 1) * sizeof(uint16_t));
-		rdbits = xrealloc(rdbits, (num_questions + 1) * sizeof(uint8_t));
+		domains =
+		    xrealloc(domains, (num_questions + 1) * sizeof(char *));
+		qtypes =
+		    xrealloc(qtypes, (num_questions + 1) * sizeof(uint16_t));
+		rdbits =
+		    xrealloc(rdbits, (num_questions + 1) * sizeof(uint8_t));
 		rdbits[num_questions] = default_rdbit;
 
 		// Add the new pair to the array
@@ -680,8 +729,11 @@ static int dns_global_initialize(struct state_conf *conf)
 
 	if (conf->packet_streams % num_questions != 0) {
 		// probe count must be a multiple of the number of DNS questions
-		log_fatal("dns", "number of probes (%d) must be a multiple of the number of DNS questions (%d)."
-				 "Example: '-P 4 --probe-args \"A,google.com;AAAA,cloudflare.com\"'", conf->packet_streams, num_questions);
+		log_fatal(
+		    "dns",
+		    "number of probes (%d) must be a multiple of the number of DNS questions (%d)."
+		    "Example: '-P 4 --probe-args \"A,google.com;AAAA,cloudflare.com\"'",
+		    conf->packet_streams, num_questions);
 	}
 	// Setup the global structures
 	dns_packets = xmalloc(sizeof(char *) * num_questions);
@@ -691,8 +743,11 @@ static int dns_global_initialize(struct state_conf *conf)
 	num_ports = conf->source_port_last - conf->source_port_first + 1;
 
 	size_t max_payload_len;
-	int ret = build_global_dns_packets(domains, num_questions, &max_payload_len);
-	module_dns.max_packet_length = max_payload_len + sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr);
+	int ret =
+	    build_global_dns_packets(domains, num_questions, &max_payload_len);
+	module_dns.max_packet_length =
+	    max_payload_len + sizeof(struct ether_header) + sizeof(struct ip) +
+	    sizeof(struct udphdr);
 	return ret;
 }
 
@@ -700,8 +755,11 @@ static int dns_global_cleanup(UNUSED struct state_conf *zconf,
 			      UNUSED struct state_send *zsend,
 			      UNUSED struct state_recv *zrecv)
 {
+	ctimer_t t;
+	ctimer_start(&t);
 	if (dns_packets) {
-		for (int i = 0; i < num_questions; i++) {
+		cilk_for(int i = 0; i < num_questions; i++)
+		{
 			if (dns_packets[i]) {
 				free(dns_packets[i]);
 			}
@@ -711,7 +769,8 @@ static int dns_global_cleanup(UNUSED struct state_conf *zconf,
 	dns_packets = NULL;
 
 	if (qnames) {
-		for (int i = 0; i < num_questions; i++) {
+		cilk_for(int i = 0; i < num_questions; i++)
+		{
 			if (qnames[i]) {
 				free(qnames[i]);
 			}
@@ -720,18 +779,23 @@ static int dns_global_cleanup(UNUSED struct state_conf *zconf,
 	}
 	qnames = NULL;
 
-	if (dns_packet_lens) {
-		free(dns_packet_lens);
-	}
+	cilk_scope
+	{
+		if (dns_packet_lens) {
+			cilk_spawn free(dns_packet_lens);
+		}
 
-	if (qname_lens) {
-		free(qname_lens);
-	}
+		if (qname_lens) {
+			cilk_spawn free(qname_lens);
+		}
 
-	if (qtypes) {
-		free(qtypes);
+		if (qtypes) {
+			cilk_spawn free(qtypes);
+		}
 	}
-
+	ctimer_stop(&t);
+	ctimer_measure(&t);
+	ctimer_print(t, "PARALLEL: global cleanup the dns");
 	return EXIT_SUCCESS;
 }
 
@@ -769,7 +833,8 @@ int dns_init_perthread(void *buf, macaddr_t *src, macaddr_t *gw,
 //      1     |       2           =       1
 //      2     |       2           =       0
 //      3     |       2           =       1
-int get_dns_question_index_by_probe_num(int probe_num) {
+int get_dns_question_index_by_probe_num(int probe_num)
+{
 	assert(probe_num >= 0);
 	return probe_num % num_questions;
 }
