@@ -14,7 +14,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
-
+#include <cilk/cilk.h>
+#include <../../lib/ctimer.h>
 #include <errno.h>
 
 #include "../../lib/blocklist.h"
@@ -492,7 +493,10 @@ void udp_template_add_field(udp_payload_template_t *t,
 // Free all buffers held by the payload template, including its own
 void udp_template_free(udp_payload_template_t *t)
 {
-	for (unsigned int x = 0; x < t->fcount; x++) {
+	ctimer_t timer;
+	ctimer_start(&timer);
+	cilk_for(unsigned int x = 0; x < t->fcount; x++)
+	{
 		if (t->fields[x]->data) {
 			free(t->fields[x]->data);
 			t->fields[x]->data = NULL;
@@ -500,6 +504,12 @@ void udp_template_free(udp_payload_template_t *t)
 		free(t->fields[x]);
 		t->fields[x] = NULL;
 	}
+	ctimer_stop(&timer);
+	ctimer_measure(&timer);
+	ctimer_print(
+	    timer,
+	    "PARALLEL: free all buffers held by the payload template, including its own");
+
 	free(t->fields);
 	t->fields = NULL;
 	t->fcount = 0;

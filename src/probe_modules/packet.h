@@ -18,6 +18,8 @@
 #include "../../lib/blocklist.h"
 #include "../../lib/pbm.h"
 #include "../state.h"
+#include <cilk/cilk.h>
+#include "../../lib/ctimer.h"
 
 #ifndef PACKET_H
 #define PACKET_H
@@ -73,12 +75,26 @@ void make_udp_header(struct udphdr *udp_header, uint16_t len);
 void fprintf_ip_header(FILE *fp, struct ip *iph);
 void fprintf_eth_header(FILE *fp, struct ether_header *ethh);
 
+static void zero_i(void *v) { *(unsigned long *)v = 0; }
+static void plus_i(void *l, void *r)
+{
+	*(unsigned long *)l += *(unsigned long *)r;
+}
+
+static unsigned long sum_array(unsigned short *array, int n)
+{
+	unsigned long cilk_reducer(zero_i, plus_i) sum = 0;
+	cilk_for(int i = 0; i < n; ++i) sum += array[i];
+	return sum;
+}
+
 static inline unsigned short in_checksum(unsigned short *ip_pkt, int len)
 {
 	unsigned long sum = 0;
 	for (int nwords = len / 2; nwords > 0; nwords--) {
 		sum += *ip_pkt++;
 	}
+
 	if (len % 2 == 1) {
 		sum += *((unsigned char *)ip_pkt);
 	}
