@@ -14,7 +14,7 @@
 #     docker run -it --rm --net=host ghcr.io/zmap/zmap <zmap args>
 ####
 
-FROM ubuntu:20.04 as builder
+FROM ubuntu:22.04 as builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
@@ -32,26 +32,34 @@ RUN apt-get update \
     libjudy-dev \
     pkg-config \
     libunistring-dev \
-    && rm -rf /var/lib/apt/lists/*
-
+    && rm -rf /var/lib/apt/lists/* 
+    
 WORKDIR /usr/local/src
 
 COPY . .
 
+# RUN wget https://github.com/OpenCilk/opencilk-project/releases/download/opencilk/v2.1/opencilk-2.1.0-x86_64-linux-gnu-ubuntu-22.04.tar.gz \
+#     && mkdir -p opencilk \
+#     && tar xvzf opencilk-2.1.0-x86_64-linux-gnu-ubuntu-22.04.tar.gz -C opencilk --strip-components=1 \
+#     # && rm -r opencilk-2.1.0-x86_64-linux-gnu-ubuntu-22.04 \
+#     && opencilk/bin/clang --version
+
 RUN cd /usr/local/src \
+    && ls \
     && mkdir -p /opt/zmap \
-    && cmake . -DRESPECT_INSTALL_PREFIX_CONFIG=ON  \
+    && cmake -DCMAKE_C_COMPILER=${PWD}/opencilk/bin/clang . -DRESPECT_INSTALL_PREFIX_CONFIG=ON \
     && cmake --build . --parallel "$(nproc)" \
     && cmake --install . --prefix "/opt/zmap"
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 LABEL org.opencontainers.image.source="https://github.com/zmap/zmap"
 
 RUN apt-get update \
     && apt-get install -y \
     libpcap0.8 \
-    libjson-c4 \
+    # libjson-c4 \
+    libjson-c-dev \
     libjudydebian1 \
     libhiredis0.14 \
     libgmp10 \
