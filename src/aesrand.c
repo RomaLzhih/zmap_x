@@ -16,6 +16,8 @@
 #include "../lib/random.h"
 #include "../lib/xalloc.h"
 
+#include "cilk/cilk.h"
+#include "../../lib/ctimer.h"
 #include "aesrand.h"
 
 #define AES_ROUNDS 10
@@ -45,9 +47,15 @@ aesrand_t *aesrand_init_from_seed(uint64_t seed)
 {
 	uint8_t key[AES_KEY_BYTES];
 	memset(key, 0, AES_KEY_BYTES);
-	for (uint8_t i = 0; i < sizeof(seed); ++i) {
+	ctimer_t t;
+	ctimer_start(&t);
+	cilk_for(uint8_t i = 0; i < sizeof(seed); ++i)
+	{
 		key[i] = (uint8_t)((seed >> 8 * i) & 0xFF);
 	}
+	ctimer_stop(&t);
+	ctimer_measure(&t);
+	ctimer_print(t, "PARALLEL: aesrand init from seed");
 	return _aesrand_init(key);
 }
 

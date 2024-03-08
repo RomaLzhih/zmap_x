@@ -12,6 +12,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <cilk/cilk.h>
+#include "../../lib/ctimer.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wundef"
@@ -352,10 +354,18 @@ void fs_free(fieldset_t *fs)
 	if (!fs) {
 		return;
 	}
-	for (int i = 0; i < fs->len; i++) {
+
+	ctimer_t t;
+	ctimer_start(&t);
+	cilk_for(int i = 0; i < fs->len; i++)
+	{
 		field_t *f = &(fs->fields[i]);
 		field_free(f);
 	}
+	ctimer_stop(&t);
+	ctimer_measure(&t);
+	ctimer_print(t, "PARALLEL: fs free");
+
 	free(fs);
 }
 
@@ -389,9 +399,12 @@ void fs_generate_full_fieldset_translation(translation_t *t,
 			  "unable to allocate memory for translation");
 	}
 	t->len = avail->len;
-	for (int i = 0; i < avail->len; i++) {
-		t->translation[i] = i;
-	}
+	ctimer_t timer;
+	ctimer_start(&timer);
+	cilk_for(int i = 0; i < avail->len; i++) { t->translation[i] = i; }
+	ctimer_stop(&timer);
+	ctimer_measure(&timer);
+	ctimer_print(timer, "PARALLEL: fs generate full fieldset translation");
 }
 
 fieldset_t *translate_fieldset(fieldset_t *fs, translation_t *t)
@@ -401,10 +414,16 @@ fieldset_t *translate_fieldset(fieldset_t *fs, translation_t *t)
 		log_fatal("fieldset",
 			  "unable to allocate space for translated field set");
 	}
-	for (int i = 0; i < t->len; i++) {
+	ctimer_t timer;
+	ctimer_start(&timer);
+	cilk_for(int i = 0; i < t->len; i++)
+	{
 		int o = t->translation[i];
 		memcpy(&(retv->fields[i]), &(fs->fields[o]), sizeof(field_t));
 	}
+	ctimer_stop(&timer);
+	ctimer_measure(&timer);
+	ctimer_print(timer, "PARALLEL: translate fieldset");
 	retv->len = t->len;
 	return retv;
 }
