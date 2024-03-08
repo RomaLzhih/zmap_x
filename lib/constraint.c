@@ -23,6 +23,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <cilk/cilk.h>
+#include <ctimer.h>
 
 #include "../lib/constraint.h"
 #include "../lib/logger.h"
@@ -265,6 +267,7 @@ static uint64_t _count_ips_recurse(node_t *node, value_t value, uint64_t size,
 {
 	assert(node);
 	uint64_t n;
+	uint64_t l, r;
 	if (IS_LEAF(node)) {
 		if (node->value == value) {
 			n = size;
@@ -277,15 +280,42 @@ static uint64_t _count_ips_recurse(node_t *node, value_t value, uint64_t size,
 			n = 0;
 		}
 	} else {
-		n = _count_ips_recurse(node->l, value, size >> 1, paint,
-				       exclude_radix) +
-		    _count_ips_recurse(node->r, value, size >> 1, paint,
-				       exclude_radix);
+		cilk_scope
+		{
+			l = cilk_spawn _count_ips_recurse(
+			    node->l, value, size >> 1, paint, exclude_radix);
+			r = _count_ips_recurse(node->r, value, size >> 1, paint,
+					       exclude_radix);
+		}
+		n = l + r;
 	}
 	if (paint) {
 		node->count = n;
 	}
 	return n;
+	// assert(node);
+	// uint64_t n;
+	// if (IS_LEAF(node)) {
+	// 	if (node->value == value) {
+	// 		n = size;
+	// 		// Exclude prefixes already included in the radix
+	// 		if (exclude_radix &&
+	// 		    size >= (1 << (32 - RADIX_LENGTH))) {
+	// 			n = 0;
+	// 		}
+	// 	} else {
+	// 		n = 0;
+	// 	}
+	// } else {
+	// 	n = _count_ips_recurse(node->l, value, size >> 1, paint,
+	// 			       exclude_radix) +
+	// 	    _count_ips_recurse(node->r, value, size >> 1, paint,
+	// 			       exclude_radix);
+	// }
+	// if (paint) {
+	// 	node->count = n;
+	// }
+	// return n;
 }
 
 // Return a node that determines the values for the addresses with
@@ -323,8 +353,15 @@ void constraint_paint_value(constraint_t *con, value_t value)
 	log_debug("constraint", "Painting value %lu", value);
 
 	// Paint everything except what we will put in radix
+
+	ctimer_t t;
+	ctimer_start(&t);
+
 	_count_ips_recurse(con->root, value, (uint64_t)1 << 32, 1, 1);
 
+	ctimer_stop(&t);
+	ctimer_measure(&t);
+	ctimer_print(t, "PARALLEL: parallel count ips");
 	// Fill in the radix array with a list of addresses
 	uint32_t i;
 	con->radix_len = 0;
@@ -351,8 +388,15 @@ uint64_t constraint_count_ips(constraint_t *con, value_t value)
 		return con->root->count +
 		       con->radix_len * (1 << (32 - RADIX_LENGTH));
 	} else {
-		return _count_ips_recurse(con->root, value, (uint64_t)1 << 32,
-					  0, 0);
+
+		ctimer_t t;
+		ctimer_start(&t);
+		uint64_t n = _count_ips_recurse(con->root, value,
+						(uint64_t)1 << 32, 0, 0);
+		ctimer_stop(&t);
+		ctimer_measure(&t);
+		ctimer_print(t, "PARALLEL: parallel init from array\n");
+		return n;
 	}
 }
 

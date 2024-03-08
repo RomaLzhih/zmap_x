@@ -22,6 +22,8 @@
 #include "constraint.h"
 #include "logger.h"
 #include "xalloc.h"
+#include <cilk/cilk.h>
+#include "ctimer.h"
 
 #define ADDR_DISALLOWED 0
 #define ADDR_ALLOWED 1
@@ -102,7 +104,8 @@ void allowlist_prefix(char *ip, int prefix_len)
 	_add_constraint(addr, prefix_len, ADDR_ALLOWED);
 }
 
-static int is_ip_ipv6(char *ip) {
+static int is_ip_ipv6(char *ip)
+{
 	// don't modify the input string
 	char *new_str = strdup(ip);
 	// check if there's a subnet mask_char
@@ -138,7 +141,8 @@ static int init_from_string(char *ip, int value)
 		if (end == len || errno != 0 || prefix_len < 0 ||
 		    prefix_len > 32) {
 			log_fatal("constraint",
-				  "'%s' is not a valid IPv4 prefix length", len);
+				  "'%s' is not a valid IPv4 prefix length",
+				  len);
 			return -1;
 		}
 	}
@@ -214,13 +218,23 @@ static int init_from_file(char *file, const char *name, int value,
 static void init_from_array(char **cidrs, size_t len, int value,
 			    int ignore_invalid_hosts)
 {
-	for (int i = 0; i < (int)len; i++) {
-		int ret = init_from_string(cidrs[i], value);
-		if (ret && !ignore_invalid_hosts) {
-			log_fatal("constraint",
-				  "Unable to init from CIDR list");
+	ctimer_t t;
+	ctimer_start(&t);
+	cilk_for(int i = 0; i < (int)len; i++)
+	{
+		int ret;
+		cilk_scope
+		{
+			ret = init_from_string(cidrs[i], value);
+			if (ret && !ignore_invalid_hosts) {
+				log_fatal("constraint",
+					  "Unable to init from CIDR list");
+			}
 		}
 	}
+	ctimer_stop(&t);
+	ctimer_measure(&t);
+	ctimer_print(t, "PARALLEL: parallel init from array");
 }
 
 uint64_t blocklist_count_allowed(void)

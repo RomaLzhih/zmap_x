@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <assert.h>
-
+#include <cilk/cilk.h>
 #include <Judy.h>
 
 #define EVICTION_NEEDED 1
@@ -60,7 +60,9 @@ cachehash *cachehash_init(size_t maxitems, cachehash_process_cb *cb)
 	// initial node
 	nodes[0].next = &nodes[1];
 	// middle nodes
-	for (unsigned int i = 1; i < maxitems - 1; i++) {
+	printf("PARA: cachehash_init\n");
+	cilk_for(unsigned int i = 1; i < maxitems - 1; i++)
+	{
 		nodes[i].prev = &nodes[i - 1];
 		nodes[i].next = &nodes[i + 1];
 	}

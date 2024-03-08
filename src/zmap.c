@@ -334,12 +334,21 @@ static void start_zmap(void)
 		};                                                             \
 	}
 
-void test() { printf("Hello, world!\n"); }
+long fib(long n)
+{
+	if (n < 2)
+		return n;
+	long x, y;
+	cilk_scope
+	{
+		x = cilk_spawn fib(n - 1);
+		y = fib(n - 2);
+	}
+	return x + y;
+}
 
 int main(int argc, char *argv[])
 {
-	cilk_for(int i = 0; i < 1000; i++) { printf("Hello, world!\n"); }
-	// cilk_scope { cilk_spawn test(); }
 
 	struct gengetopt_args_info args;
 	struct cmdline_parser_params *params;
