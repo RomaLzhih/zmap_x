@@ -41,20 +41,24 @@ int get_hw_addr(struct in_addr *gw_ip, UNUSED char *iface,
 	mib[5] = RTF_LLINFO;
 	size_t bufsz = 0;
 	if (sysctl(mib, 6, NULL, &bufsz, NULL, 0) == -1) {
-		log_debug("get_hw_addr", "sysctl getting buffer size: %d %s", errno, strerror(errno));
+		log_debug("get_hw_addr", "sysctl getting buffer size: %d %s",
+			  errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
 	uint8_t *buf = (uint8_t *)malloc(bufsz);
 	assert(buf);
 	if (sysctl(mib, 6, buf, &bufsz, NULL, 0) == -1) {
-		log_debug("get_hw_addr", "sysctl getting buffer data: %d %s", errno, strerror(errno));
+		log_debug("get_hw_addr", "sysctl getting buffer data: %d %s",
+			  errno, strerror(errno));
 		free(buf);
 		return EXIT_FAILURE;
 	}
 
 	int result = EXIT_FAILURE;
 	uint8_t *bufend = buf + bufsz;
-	size_t min_msglen = sizeof(struct rt_msghdr) + sizeof(struct sockaddr_inarp) + sizeof(struct sockaddr_dl);
+	size_t min_msglen = sizeof(struct rt_msghdr) +
+			    sizeof(struct sockaddr_inarp) +
+			    sizeof(struct sockaddr_dl);
 	struct rt_msghdr *rtm = (struct rt_msghdr *)buf;
 	for (uint8_t *p = buf; p < bufend; p += rtm->rtm_msglen) {
 		rtm = (struct rt_msghdr *)p;
@@ -116,14 +120,16 @@ int get_iface_hw_addr(char *iface, unsigned char *hw_mac)
 {
 	struct ifaddrs *ifa;
 	if (getifaddrs(&ifa) == -1) {
-		log_debug("get_iface_hw_addr", "getifaddrs(): %d %s", errno, strerror(errno));
+		log_debug("get_iface_hw_addr", "getifaddrs(): %d %s", errno,
+			  strerror(errno));
 		return EXIT_FAILURE;
 	}
 	int result = EXIT_FAILURE;
 	for (struct ifaddrs *p = ifa; p; p = p->ifa_next) {
-		if (strcmp(p->ifa_name, iface) == 0 &&
-		    p->ifa_addr != NULL && p->ifa_addr->sa_family == AF_LINK) {
-			struct sockaddr_dl *sdl = (struct sockaddr_dl *)p->ifa_addr;
+		if (strcmp(p->ifa_name, iface) == 0 && p->ifa_addr != NULL &&
+		    p->ifa_addr->sa_family == AF_LINK) {
+			struct sockaddr_dl *sdl =
+			    (struct sockaddr_dl *)p->ifa_addr;
 			memcpy(hw_mac, LLADDR(sdl), ETHER_ADDR_LEN);
 			result = EXIT_SUCCESS;
 			break;

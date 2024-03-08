@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <time.h>
 
 #include "../lib/includes.h"
@@ -16,7 +17,8 @@
 #include "../lib/logger.h"
 #include "../lib/xalloc.h"
 #include "../lib/util.h"
-
+#include "cilk/cilk.h"
+#include "../../lib/ctimer.h"
 #include "iterator.h"
 
 #include "aesrand.h"
@@ -104,30 +106,87 @@ iterator_t *iterator_init(uint8_t num_threads, uint16_t shard,
 	return it;
 }
 
+static void zero_i(void *v) { *(unsigned long *)v = 0; }
+static void plus_i(void *l, void *r)
+{
+	*(unsigned long *)l += *(unsigned long *)r;
+}
+
+static unsigned long sum_array_packet_sent(iterator_t *it)
+{
+	unsigned long cilk_reducer(zero_i, plus_i) sum = 0;
+	cilk_for(int i = 0; i < it->num_threads; ++i)
+	{
+		sum += it->thread_shards[i].state.packets_sent;
+	}
+	return sum;
+}
+
 uint64_t iterator_get_sent(iterator_t *it)
 {
-	uint64_t sent = 0;
-	for (uint8_t i = 0; i < it->num_threads; ++i) {
-		sent += it->thread_shards[i].state.packets_sent;
-	}
+	ctimer_t timer;
+	ctimer_start(&timer);
+	uint64_t sent = sum_array_packet_sent(it);
+	ctimer_stop(&timer);
+	ctimer_measure(&timer);
+	ctimer_print(timer, "PARALLEL: iterator get sent");
+	// for (uint8_t i = 0; i < it->num_threads; ++i) {
+	// 	sent += it->thread_shards[i].state.packets_sent;
+	// }
+	// if (sent != sum_array(it)) {
+	// 	printf("%ld != %ld\n", sent, sum_array(it));
+	// }
+	// printf("%ld != %ld\n", sent, sum_array(it));
 	return sent;
+}
+
+static unsigned long sum_array_iteration(iterator_t *it)
+{
+	unsigned long cilk_reducer(zero_i, plus_i) sum = 0;
+	cilk_for(int i = 0; i < it->num_threads; ++i)
+	{
+		sum += it->thread_shards[i].iterations;
+	}
+	return sum;
 }
 
 uint64_t iterator_get_iterations(iterator_t *it)
 {
-	uint64_t iterations = 0;
-	for (uint8_t i = 0; i < it->num_threads; ++i) {
-		iterations += it->thread_shards[i].iterations;
-	}
+	// uint64_t iterations = 0;
+	// for (uint8_t i = 0; i < it->num_threads; ++i) {
+	// 	iterations += it->thread_shards[i].iterations;
+	// }
+	ctimer_t timer;
+	ctimer_start(&timer);
+	uint64_t iterations = sum_array_iteration(it);
+	ctimer_stop(&timer);
+	ctimer_measure(&timer);
+	ctimer_print(timer, "PARALLEL: iterator get iterations");
 	return iterations;
+}
+
+static unsigned int sum_array_failed(iterator_t *it)
+{
+	unsigned int cilk_reducer(zero_i, plus_i) sum = 0;
+	cilk_for(int i = 0; i < it->num_threads; ++i)
+	{
+		sum += it->thread_shards[i].state.packets_failed;
+	}
+	return sum;
 }
 
 uint32_t iterator_get_fail(iterator_t *it)
 {
-	uint32_t fails = 0;
-	for (uint8_t i = 0; i < it->num_threads; ++i) {
-		fails += it->thread_shards[i].state.packets_failed;
-	}
+	// uint32_t fails = 0;
+	// for (uint8_t i = 0; i < it->num_threads; ++i) {
+	// 	fails += it->thread_shards[i].state.packets_failed;
+	// }
+	ctimer_t timer;
+	ctimer_start(&timer);
+	uint32_t fails = sum_array_failed(it);
+	ctimer_stop(&timer);
+	ctimer_measure(&timer);
+	ctimer_print(timer, "PARALLEL: iterator get failed");
 	return fails;
 }
 
