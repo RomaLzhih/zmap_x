@@ -5,6 +5,7 @@
 *.pyo
 *~
 .cache/
+opencilk*
 WezTerm
 compile_commands.json
 bin/*

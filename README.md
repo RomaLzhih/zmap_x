@@ -6,7 +6,7 @@ This document serves as the project report for zmen002 in CS254 2024 Winter.
 
 This project aims to explore the possibility to add the parallelism for Zmap, such as generic operations, data manipulation and etc, mostly in the preprocessing and the post-processing phase. More details regarding the implementation framework, please see project proposal, mid report and the video presentation. 
 
-The project is conducted on a Linux machine running Ubuntu 22.04. Not tested on other machines.
+The project is conducted on a Linux machine running Ubuntu 22.04. Not tested on other machines. Please contact `zmen002@ucr.edu` if you have any issues running the code.
 
 ## Prerequisites
 
@@ -63,7 +63,7 @@ wget https://github.com/OpenCilk/opencilk-project/releases/download/opencilk/v2.
    opencilk/bin/clang --version
    ```
 
-   which should output the compiler version as clang 16.
+   which should output the compiler version as clang 16.0.6.
 
 ### Installing dependencies for Zmap
 
@@ -90,7 +90,7 @@ To compile the code, try:
 ```{shell}
 mkdir bin
 mkdir build; cd build
-cmake -DCMAKE_C_COMPILER=../opencilk/bin/clang -DCMAKE_INSTALL_PREFIX=../bin ..
+cmake -DCMAKE_C_COMPILER=${PWD}/../opencilk/bin/clang -DCMAKE_INSTALL_PREFIX=../bin -DENABLE_DEVELOPMENT=OFF ..
 make zmap
 make install
 ```
@@ -98,7 +98,7 @@ make install
 The compiled binary is available in `zmap_x/bin/sbin/zmap`.  To verify, try:
 
 ```bash
-bin/sbin/zmap --version
+../bin/sbin/zmap --version
 ```
 
  ## Running
