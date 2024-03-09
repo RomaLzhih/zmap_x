@@ -15,6 +15,8 @@
 
 #include "../lib/includes.h"
 #include "../lib/logger.h"
+#include "cilk/cilk.h"
+#include "../../lib/ctimer.h"
 
 #include <net/netmap_user.h>
 #include <net/if_types.h>
@@ -30,8 +32,7 @@
 
 #include "state.h"
 
-static void
-fetch_if_data(struct if_data *ifd)
+static void fetch_if_data(struct if_data *ifd)
 {
 	struct ifreq ifr;
 	bzero(&ifr, sizeof(ifr));
@@ -43,8 +44,7 @@ fetch_if_data(struct if_data *ifd)
 	}
 }
 
-static size_t
-data_link_size_from_if_type(unsigned char if_type)
+static size_t data_link_size_from_if_type(unsigned char if_type)
 {
 	switch (if_type) {
 	case IFT_ETHER:
@@ -58,8 +58,7 @@ data_link_size_from_if_type(unsigned char if_type)
 	}
 }
 
-static size_t
-fetch_data_link_size(void)
+static size_t fetch_data_link_size(void)
 {
 	struct if_data ifd;
 	bzero(&ifd, sizeof(ifd));
@@ -76,8 +75,8 @@ static struct {
 	uint64_t ifi_oerrors;
 } stats;
 
-static int
-fetch_stats(uint32_t *ps_recv, uint32_t *ps_drop, uint32_t *ps_ifdrop)
+static int fetch_stats(uint32_t *ps_recv, uint32_t *ps_drop,
+		       uint32_t *ps_ifdrop)
 {
 	// Notes on if counters:
 	// On interfaces without hardware counters (HWSTATS), ipackets misses
@@ -101,13 +100,14 @@ fetch_stats(uint32_t *ps_recv, uint32_t *ps_drop, uint32_t *ps_ifdrop)
 		stats.ifi_oerrors = ifd.ifi_oerrors;
 	} else {
 		if (stats.hwstats) {
-			*ps_recv = (uint32_t)(ifd.ifi_ipackets - stats.ifi_ipackets);
+			*ps_recv =
+			    (uint32_t)(ifd.ifi_ipackets - stats.ifi_ipackets);
 		} else {
 			*ps_recv = (uint32_t)stats.ifi_ipackets;
 		}
 		*ps_drop = (uint32_t)(ifd.ifi_iqdrops - stats.ifi_iqdrops);
 		*ps_ifdrop = (uint32_t)(ifd.ifi_ierrors - stats.ifi_ierrors +
-		                        ifd.ifi_oerrors - stats.ifi_oerrors);
+					ifd.ifi_oerrors - stats.ifi_oerrors);
 	}
 	return 0;
 }
@@ -125,15 +125,23 @@ void recv_init(void)
 
 	in_multi_seg_packet = (bool *)malloc(nm_if->ni_rx_rings * sizeof(bool));
 	assert(in_multi_seg_packet);
-	for (size_t ri = 0; ri < nm_if->ni_rx_rings; ri++) {
+
+	ctimer_t timer;
+	ctimer_start(&timer);
+	cilk_for(size_t ri = 0; ri < nm_if->ni_rx_rings; ri++)
+	{
 		in_multi_seg_packet[ri] = false;
 	}
+	ctimer_stop(&timer);
+	ctimer_measure(&timer);
+	ctimer_print(timer, "PARALLEL: recv init");
 
 	zconf.data_link_size = fetch_data_link_size();
 	log_debug("recv-netmap", "data_link_size %d", zconf.data_link_size);
 
 	if (fetch_stats(NULL, NULL, NULL) == -1) {
-		log_fatal("recv-netmap", "Failed to fetch initial interface counters");
+		log_fatal("recv-netmap",
+			  "Failed to fetch initial interface counters");
 	}
 }
 
@@ -149,9 +157,9 @@ void recv_packets(void)
 	int ret = poll(&fds, 1, 100 /* ms */);
 	if (ret == 0) {
 		return;
-	}
-	else if (ret == -1) {
-		log_error("recv-netmap", "poll(POLLIN) failed: %d: %s", errno, strerror(errno));
+	} else if (ret == -1) {
+		log_error("recv-netmap", "poll(POLLIN) failed: %d: %s", errno,
+			  strerror(errno));
 		return;
 	}
 
@@ -227,7 +235,8 @@ int recv_update_stats(void)
 		return EXIT_FAILURE;
 	}
 
-	if (fetch_stats(&zrecv.pcap_recv, &zrecv.pcap_drop, &zrecv.pcap_ifdrop) == -1) {
+	if (fetch_stats(&zrecv.pcap_recv, &zrecv.pcap_drop,
+			&zrecv.pcap_ifdrop) == -1) {
 		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
