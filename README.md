@@ -1,4 +1,4 @@
-# Parallelism in Zmap
+# Add parallelism into Zmap
 
 This document serves as the project report for zmen002 in CS254 2024 Winter.
 
