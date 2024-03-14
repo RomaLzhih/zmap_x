@@ -1,6 +1,6 @@
 # Add parallelism into Zmap
 
-This document serves as the project report for Ziyang Men in CS254 24W @ UCR.
+This document serves as part of the project report for Ziyang Men in CS254 24W @ UCR.
 
 [Zmap](https://github.com/zmap/zmap) is an open-source network scanner specifically to perform Internet-wide scans and capable of surveying the entire IPv4 address space. 
 
